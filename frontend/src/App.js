@@ -7,6 +7,7 @@ function App() {
   const [format, setFormat] = useState("binary");
   const [stlLink, setStlLink] = useState("");
   const [unit, setUnit] = useState("mm");
+  const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3001";
 
   const handleUpload = () => {
     if (!file) {
@@ -50,7 +51,7 @@ function App() {
       setProgress(0);
       setStlLink("");
     };
-    xhr.open("POST", "http://localhost:3001/api/convert");
+    xhr.open("POST", `${API_URL}/api/convert`);
     xhr.send(formData);
   };
 
@@ -71,7 +72,7 @@ function App() {
       {progress > 0 && <progress value={progress} max="100">{progress}%</progress>}
       {stlLink && (
         <p>
-          <button onClick={() => window.open(`http://localhost:3001${stlLink}`, "_blank")}>Скачать STL</button>
+          <button onClick={() => window.open(`${API_URL}${stlLink}`, "_blank")}>Скачать STL</button>
         </p>
       )}
       <p>{message}</p>
