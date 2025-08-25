@@ -6,6 +6,7 @@ function App() {
   const [progress, setProgress] = useState(0);
   const [format, setFormat] = useState("binary");
   const [stlLink, setStlLink] = useState("");
+  const [unit, setUnit] = useState("mm");
 
   const handleUpload = () => {
     if (!file) {
@@ -26,6 +27,7 @@ function App() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("format", format);
+    formData.append("unit", unit);
 
     const xhr = new XMLHttpRequest();
     xhr.upload.onprogress = (e) => {
@@ -35,7 +37,11 @@ function App() {
     };
     xhr.onload = () => {
       const data = JSON.parse(xhr.responseText);
-      setMessage(data.message || data.error);
+      if (data.error === "2D-чертёж" || data.error === "Пустая модель") {
+        setMessage("Предупреждение: " + data.error);
+      } else {
+        setMessage(data.message || data.error);
+      }
       setStlLink(data.url || "");
       setProgress(0);
     };
@@ -56,13 +62,16 @@ function App() {
         <option value="binary">Binary STL</option>
         <option value="ascii">ASCII STL</option>
       </select>
+      <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+        <option value="mm">мм</option>
+        <option value="cm">см</option>
+        <option value="m">м</option>
+      </select>
       <button onClick={handleUpload}>Загрузить</button>
       {progress > 0 && <progress value={progress} max="100">{progress}%</progress>}
       {stlLink && (
         <p>
-          <a href={`http://localhost:3001${stlLink}`} target="_blank" rel="noreferrer">
-            Скачать STL
-          </a>
+          <button onClick={() => window.open(`http://localhost:3001${stlLink}`, "_blank")}>Скачать STL</button>
         </p>
       )}
       <p>{message}</p>
