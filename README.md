@@ -25,6 +25,9 @@ npm start
 APS_CLIENT_ID=<ваш client id>
 APS_CLIENT_SECRET=<ваш secret>
 APS_BUCKET=<bucket в OSS>
+
+# опционально для фронтенда
+REACT_APP_API_URL=<url бэкенда>
 ```
 
 ### Frontend
@@ -59,3 +62,16 @@ curl -F file=@model.dwg -F format=ascii http://localhost:3001/api/convert
 # скачивание результата после получения ссылки
 curl -o result.stl "http://localhost:3001/api/download/<urn>/<derivativeUrn>"
 ```
+
+## Деплой
+
+### Frontend (Vercel / Render)
+1. Укажите переменную окружения `REACT_APP_API_URL` со ссылкой на бэкенд.
+2. Запуск сборки: `npm install && npm run build`.
+3. Для Render используйте Dockerfile из папки `frontend` или статический хостинг; для Vercel достаточно обычного проекта React.
+
+### Backend (Render / Fly)
+1. Настройте переменные `APS_CLIENT_ID`, `APS_CLIENT_SECRET`, `APS_BUCKET`.
+2. При использовании Render можно указать Procfile (`web: node backend/server.js`) или Dockerfile из `backend`.
+3. Для Fly: `flyctl launch` и деплой через Dockerfile.
+4. Перед обработкой файла рекомендуется вызвать ClamAV (см. функцию `scanForViruses` в `backend/server.js`).

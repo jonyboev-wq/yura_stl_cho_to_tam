@@ -2,6 +2,8 @@ const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
 const axios = require("axios");
+const fs = require("fs");
+const os = require("os");
 require("dotenv").config();
 
 const app = express();
@@ -9,7 +11,32 @@ const port = 3001;
 
 app.use(cors());
 
-const upload = multer({ limits: { fileSize: 100 * 1024 * 1024 } }); // 100 MB limit
+// temporary storage for uploaded files
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, os.tmpdir()),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
+});
+
+function fileFilter(req, file, cb) {
+  const allowed = [
+    "application/acad",
+    "application/x-acad",
+    "application/dwg",
+    "image/vnd.dwg",
+    "application/octet-stream",
+  ];
+  if (allowed.includes(file.mimetype) || file.originalname.endsWith(".dwg")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Недопустимый MIME тип"));
+  }
+}
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter,
+}); // 100 MB limit
 
 const { APS_CLIENT_ID, APS_CLIENT_SECRET, APS_BUCKET } = process.env;
 
@@ -59,11 +86,12 @@ async function ensureBucket(token) {
 
 async function uploadObject(token, bucketKey, file) {
   const objectKey = file.originalname;
+  const data = fs.readFileSync(file.path);
   await axios.put(
     `https://developer.api.autodesk.com/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(
       objectKey
     )}`,
-    file.buffer,
+    data,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -76,7 +104,7 @@ async function uploadObject(token, bucketKey, file) {
     .replace(/=/g, "");
 }
 
-async function translateToSTL(token, urn, format) {
+async function translateToSTL(token, urn, format, unit) {
   await axios.post(
     "https://developer.api.autodesk.com/modelderivative/v2/designdata/job",
     {
@@ -85,7 +113,7 @@ async function translateToSTL(token, urn, format) {
         formats: [
           {
             type: "stl",
-            advanced: { format },
+            advanced: { format, unit },
           },
         ],
       },
@@ -108,14 +136,22 @@ async function pollManifest(token, urn) {
     );
     if (data.status === "success") {
       const derivative = data.derivatives.find((d) => d.outputType === "stl");
-      if (derivative && derivative.children && derivative.children.length) {
-        return derivative.children[0].urn;
+      if (derivative) {
+        if (derivative.children && derivative.children.length) {
+          return derivative.children[0].urn;
+        }
+        throw new Error("Пустая модель");
       }
+      throw new Error("2D-чертёж");
     } else if (data.status === "failed") {
       throw new Error("Translation failed");
     }
     await new Promise((r) => setTimeout(r, 5000));
   }
+}
+
+async function scanForViruses(filePath) {
+  // В этом месте следует вызвать ClamAV для проверки файла
 }
 
 // POST /api/convert
@@ -124,25 +160,26 @@ app.post("/api/convert", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "Файл не загружен" });
     }
-    if (!req.file.originalname.endsWith(".dwg")) {
-      return res.status(400).json({ error: "Допустимы только .dwg файлы" });
-    }
-
     const format = req.body.format === "ascii" ? "ascii" : "binary";
+    const unit = ["mm", "cm", "m"].includes(req.body.unit) ? req.body.unit : "mm";
+
+    await scanForViruses(req.file.path);
 
     const token = await authenticate();
     const bucketKey = await ensureBucket(token);
     const urn = await uploadObject(token, bucketKey, req.file);
-    await translateToSTL(token, urn, format);
+    await translateToSTL(token, urn, format, unit);
     const derivativeUrn = await pollManifest(token, urn);
 
     const url = `/api/download/${encodeURIComponent(urn)}/${encodeURIComponent(
       derivativeUrn
     )}`;
+
+    fs.unlink(req.file.path, () => {}); // автоудаление
     return res.json({ status: "ok", url });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Ошибка конвертации" });
+    return res.status(500).json({ error: err.message || "Ошибка конвертации" });
   }
 });
 
@@ -167,6 +204,20 @@ app.get("/api/status", (req, res) => {
   res.json({ status: "running" });
 });
 
-app.listen(port, () => {
-  console.log(`Backend listening on http://localhost:${port}`);
+app.use((err, req, res, next) => {
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({ error: "Файл больше 100 МБ" });
+  }
+  if (err.message) {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
 });
+
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Backend listening on http://localhost:${port}`);
+  });
+}
+
+module.exports = app;
