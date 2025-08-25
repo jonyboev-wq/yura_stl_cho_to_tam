@@ -1,8 +1,11 @@
 const express = require("express");
 const multer = require("multer");
+const cors = require("cors");
 
 const app = express();
 const port = 3001;
+
+app.use(cors());
 
 const upload = multer({ limits: { fileSize: 100 * 1024 * 1024 } }); // 100 MB limit
 
